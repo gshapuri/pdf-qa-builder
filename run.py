@@ -15,6 +15,7 @@ from pdf_pipeline.embedder import Embedder
 from pdf_pipeline.summarizer import Summarizer
 from pdf_pipeline.vector_store import WeaviateVectorStore
 from query_pipeline.retriever import Retriever
+from query_pipeline.reranker import Reranker
 from query_pipeline.generator import Generator
 
 
@@ -31,6 +32,7 @@ def build_index(
     :param chunk_size: number of words per chunk
     :param overlap: number of words overlapping between chunks
     :param summary_level: 'section' or 'chunk' - what to summarize
+    :return:
     """
     start_time = time.time()
     
@@ -43,133 +45,246 @@ def build_index(
     print(f"Found {len(pdf_files)} PDF files in {pdf_dir}")
     print(f"Summary level: {summary_level}")
     
-    # initialize pipeline components
-    reader = PDFReader()
-    splitter = TextSplitter(chunk_size=chunk_size, overlap=overlap)
-    embedder = Embedder(model_name="balanced")
-    summarizer = Summarizer(model_name="fast")
-    store = WeaviateVectorStore()
-    
-    processed_count = 0
-    
-    for pdf_path in pdf_files:
-        pdf_name = Path(pdf_path).name
-        print(f"\nProcessing {pdf_name}...")
+    try:
+        # initialize pipeline components
+        reader = PDFReader()
+        splitter = TextSplitter(chunk_size=chunk_size, overlap=overlap)
+        embedder = Embedder(model_name="balanced")
+        summarizer = Summarizer(model_name="fast")
+        store = WeaviateVectorStore()
         
-        # extract sections with error handling
-        try:
-            sections = reader.extract_sections(pdf_path)
-        except Exception as e:
-            print(f"Failed to process {pdf_name}: {e}")
-            continue
+        processed_count = 0
         
-        # skip if no sections extracted
-        if not sections:
-            print(f"Skipping {pdf_name}: no extractable text")
-            continue
-        
-        # split into chunks
-        chunks = splitter.split_sections(sections)
-        print(f"Created {len(chunks)} chunks from {len(sections)} sections")
-        
-        # generate summaries based on level
-        if summary_level == "section":
-            print(f"Generating section summaries...")
-            summaries = summarizer.summarize_sections(sections)
+        for pdf_path in pdf_files:
+            pdf_name = Path(pdf_path).name
+            print(f"\nProcessing {pdf_name}...")
             
-            # embed section summaries
-            print(f"Creating embeddings for summaries...")
-            summary_texts = list(summaries.values())
-            summary_embeds = embedder.embed_texts(summary_texts)
+            # extract sections with error handling
+            try:
+                sections = reader.extract_sections(pdf_path)
+            except Exception as e:
+                print(f"Failed to process {pdf_name}: {e}")
+                continue
             
-            summary_vectors = {
-                name: vector 
-                for name, vector in zip(summaries.keys(), summary_embeds)
-            }
+            # skip if no sections extracted
+            if not sections:
+                print(f"Skipping {pdf_name}: no extractable text")
+                continue
             
-        else:  # chunk level
-            print(f"Generating chunk summaries...")
-            chunk_summaries = summarizer.summarize_chunks(chunks)
-            
-            # embed chunk summaries
-            print(f"Creating embeddings for summaries...")
-            summary_texts = [cs["summary"] for cs in chunk_summaries]
-            summary_embeds = embedder.embed_texts(summary_texts)
-            
-            # organize by section for storage
-            summaries = {}
-            summary_vectors = {}
-            for chunk, vector in zip(chunk_summaries, summary_embeds):
-                key = f"{chunk['section']}_chunk_{chunk['chunk_id']}"
-                summaries[key] = chunk["summary"]
-                summary_vectors[key] = vector
+            try:
+                # split into chunks
+                chunks = splitter.split_sections(sections)
+                print(f"Created {len(chunks)} chunks from {len(sections)} sections")
+                
+                # generate summaries based on level
+                if summary_level == "section":
+                    print(f"Generating section summaries...")
+                    summaries = summarizer.summarize_sections(sections)
+                    
+                    # embed section summaries
+                    print(f"Creating embeddings for summaries...")
+                    summary_texts = list(summaries.values())
+                    summary_embeds = embedder.embed_texts(summary_texts)
+                    
+                    summary_vectors = {
+                        name: vector 
+                        for name, vector in zip(summaries.keys(), summary_embeds)
+                    }
+                    
+                # chunk level
+                else:  
+                    print(f"Generating chunk summaries...")
+                    chunk_summaries = summarizer.summarize_chunks(chunks)
+                    
+                    # embed chunk summaries
+                    print(f"Creating embeddings for summaries...")
+                    summary_texts = [cs["summary"] for cs in chunk_summaries]
+                    summary_embeds = embedder.embed_texts(summary_texts)
+                    
+                    # organize by section for storage
+                    summaries = {}
+                    summary_vectors = {}
+                    for chunk, vector in zip(chunk_summaries, summary_embeds):
+                        key = f"{chunk['section']}_chunk_{chunk['chunk_id']}"
+                        summaries[key] = chunk["summary"]
+                        summary_vectors[key] = vector
+                
+                # embed chunks
+                print(f"Creating embeddings for chunks...")
+                chunk_texts = [chunk.text for chunk in chunks]
+                chunk_vectors = embedder.embed_texts(chunk_texts)
+                
+                # prepare chunks for storage
+                chunk_dicts = [
+                    {
+                        "section": chunk.section,
+                        "chunk_id": chunk.chunk_id,
+                        "text": chunk.text,
+                    }
+                    for chunk in chunks
+                ]
+                
+                # upload to weaviate
+                store.insert_sections(
+                    sections=sections,
+                    summaries=summaries,
+                    summary_vectors=summary_vectors,
+                    chunks=chunk_dicts,
+                    chunk_vectors=chunk_vectors,
+                    pdf_name=pdf_name,
+                    summary_level=summary_level,
+                )
+                
+                processed_count += 1
+                
+            except Exception as e:
+                print(f"Error processing {pdf_name}: {e}")
+                continue
         
-        # embed chunks
-        print(f"Creating embeddings for chunks...")
-        chunk_texts = [chunk.text for chunk in chunks]
-        chunk_vectors = embedder.embed_texts(chunk_texts)
+        elapsed_time = time.time() - start_time
+        print(f"\nAll PDFs processed successfully: {processed_count}/{len(pdf_files)} in {elapsed_time:.1f}s")
         
-        # prepare chunks for storage
-        chunk_dicts = [
-            {
-                "section": chunk.section,
-                "chunk_id": chunk.chunk_id,
-                "text": chunk.text,
-            }
-            for chunk in chunks
-        ]
-        
-        # upload to weaviate
-        store.insert_sections(
-            sections=sections,
-            summaries=summaries,
-            summary_vectors=summary_vectors,
-            chunks=chunk_dicts,
-            chunk_vectors=chunk_vectors,
-            pdf_name=pdf_name,
-            summary_level=summary_level,
-        )
-        
-        processed_count += 1
-    
-    elapsed_time = time.time() - start_time
-    print(f"\nAll PDFs processed successfully: {processed_count}/{len(pdf_files)} in {elapsed_time:.1f}s")
+    except Exception as e:
+        print(f"Error during indexing: {e}")
+        raise
+    finally:
+        if 'store' in locals():
+            store.close()
 
 
-def ask_question(question: str, top_k: int = 5):
+def ask_question(
+    question: str, 
+    top_k: int = 5,
+    use_reranker: bool = True,
+    rerank_mode: str = "hybrid",
+    retrieve_k: int = 20,
+):
     """
     query weaviate and generate answer using llm
     
     :param question: natural language query
-    :param top_k: number of sections to retrieve
+    :param top_k: number of chunks/sections to use for answer generation
+    :param use_reranker: whether to use reranker
+    :param rerank_mode: 'chunks' (flat), 'sections' (per section), or 'hybrid' (balanced)
+    :param retrieve_k: number of initial candidates to retrieve (before reranking)
+    :return:
     """
-    # initialize pipeline components
-    retriever = Retriever(top_k=top_k)
-    generator = Generator()
-
     try:
-        retrieved_results = retriever.retrieve(question)
+        # initialize pipeline components
+        retriever = Retriever(top_k=retrieve_k if use_reranker else top_k)
+        generator = Generator()
         
-        if not retrieved_results:
-            print("No results found")
-            return
+        if use_reranker:
+            reranker = Reranker(model_name="balanced")
+
+        try:
+            # retrieve candidates
+            retrieved_results = retriever.retrieve(question)
+            
+            if not retrieved_results:
+                print("No results found")
+                return
+            
+            # rerank if enabled
+            if use_reranker:
+                print(f"\nReranking with mode: {rerank_mode}")
+                
+                try:
+                    if rerank_mode == "chunks":
+                        # flat reranking: get top k chunks globally
+                        reranked_chunks = reranker.rerank_chunks(
+                            question, 
+                            retrieved_results, 
+                            top_k=top_k
+                        )
+                        
+                        # reorganize into section format for generator
+                        reranked_results = []
+                        section_map = {}
+                        
+                        for chunk in reranked_chunks:
+                            key = (chunk['section'], chunk['pdf_name'])
+                            if key not in section_map:
+                                section_map[key] = {
+                                    'section': chunk['section'],
+                                    'pdf_name': chunk['pdf_name'],
+                                    'chunks': []
+                                }
+                            section_map[key]['chunks'].append(chunk)
+                        
+                        reranked_results = list(section_map.values())
+                        
+                    elif rerank_mode == "sections":
+                        # per-section reranking: keep top chunks per section
+                        chunks_per_section = max(1, top_k // len(retrieved_results))
+                        reranked_results = reranker.rerank_sections(
+                            question,
+                            retrieved_results,
+                            chunks_per_section=chunks_per_section,
+                        )
+                    
+                    # hybrid
+                    else:
+                        reranked_results = reranker.rerank_hybrid(
+                            question,
+                            retrieved_results,
+                            total_chunks=top_k,
+                            min_chunks_per_section=1,
+                            max_chunks_per_section=3,
+                        )
+                    
+                    # show reranking stats
+                    total_chunks = sum(len(r['chunks']) for r in reranked_results)
+                    print(f"After reranking: {len(reranked_results)} sections, {total_chunks} chunks")
+                    
+                    final_results = reranked_results
+                    
+                except Exception as e:
+                    print(f"Error during reranking: {e}")
+                    print("Falling back to retrieved results without reranking")
+                    final_results = retrieved_results
+            else:
+                final_results = retrieved_results
+            
+            # generate answer
+            result = generator.generate(question, final_results)
+            
+            print(f"\n{'='*80}")
+            print(f"Question: {question}")
+            print(f"{'='*80}\n")
+            print(f"{result['answer']}\n")
+            print(f"{'='*80}")
+            print(f"Sources:")
+            print(f"{'='*80}")
+            for i, source in enumerate(result['sources'], 1):
+                print(f"{i}. {source['pdf']} - {source['section']} ({source['num_chunks']} chunks)")
+            
+            # show relevance scores if available
+            if use_reranker and rerank_mode != "sections":
+                print(f"\n{'='*80}")
+                print(f"Relevance Scores:")
+                print(f"{'='*80}")
+                for section_result in final_results:
+                    section = section_result['section']
+                    pdf = section_result['pdf_name']
+                    for chunk in section_result['chunks']:
+                        score = chunk.get('relevance_score', 0.0)
+                        print(f"  [{pdf}] {section} (chunk {chunk['chunk_id']}): {score:.4f}")
+            
+            print()
+            
+        except Exception as e:
+            print(f"Error during query execution: {e}")
+            raise
         
-        result = generator.generate(question, retrieved_results)
-        
-        print(f"\n{'='*80}")
-        print(f"Question: {question}")
-        print(f"{'='*80}\n")
-        print(f"{result['answer']}\n")
-        print(f"{'='*80}")
-        print(f"Sources:")
-        print(f"{'='*80}")
-        for i, source in enumerate(result['sources'], 1):
-            print(f"{i}. {source['pdf']} - {source['section']} ({source['num_chunks']} chunks)")
-        print()
-    
+    except Exception as e:
+        print(f"Error initializing query pipeline: {e}")
+        raise
     finally:
-        retriever.close()
-        generator.close()
+        if 'retriever' in locals():
+            retriever.close()
+        if 'generator' in locals():
+            generator.close()
         
 
 def main():
@@ -218,8 +333,26 @@ def main():
     ask_parser.add_argument(
         "--top-k", 
         type=int, 
-        default=5, 
-        help="Number of sections to return"
+        default=10, 
+        help="Number of chunks to use for answer generation"
+    )
+    ask_parser.add_argument(
+        "--no-rerank",
+        action="store_true",
+        help="Disable reranking (faster but less accurate)"
+    )
+    ask_parser.add_argument(
+        "--rerank-mode",
+        type=str,
+        choices=["chunks", "sections", "hybrid"],
+        default="hybrid",
+        help="Reranking strategy: chunks (flat), sections (per-section), hybrid (balanced)"
+    )
+    ask_parser.add_argument(
+        "--retrieve-k",
+        type=int,
+        default=20,
+        help="Number of initial candidates to retrieve before reranking"
     )
     
     args = parser.parse_args()
@@ -232,7 +365,13 @@ def main():
             args.summary_level
         )
     elif args.command == "ask":
-        ask_question(args.question, args.top_k)
+        ask_question(
+            args.question, 
+            args.top_k,
+            use_reranker=not args.no_rerank,
+            rerank_mode=args.rerank_mode,
+            retrieve_k=args.retrieve_k,
+        )
     else:
         parser.print_help()
 

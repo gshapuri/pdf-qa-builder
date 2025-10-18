@@ -189,4 +189,77 @@ This is a strong, clear, and mostly accurate answer, but it slightly oversimplif
 
 Overall	4.4 / 5 — Excellent, with minor technical refinements recommended.
 
+---
+Implemented a reranker to improve retrieval quality by scoring and reordering candidates before final LLM synthesis.
 
+```
+python run.py ask "How do Self-Improving LLM Agents and AgentFlow differ in their mechanisms for continuous adaptation and feedback optimization?"
+
+
+Connected to local Weaviate at http://localhost:8080
+Loading reranker model: cross-encoder/ms-marco-MiniLM-L-12-v2
+Embedding question: 'How do Self-Improving LLM Agents and AgentFlow differ in their mechanisms for continuous adaptation and feedback optimization?'
+Batches: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  7.66it/s]
+Querying Weaviate for top 20 matches...
+Retrieved 20 results
+
+Reranking with mode: hybrid
+Reranking 105 total chunks across 20 sections...
+Selected 10 chunks across 10 sections
+After reranking: 10 sections, 10 chunks
+Generating answer with gpt-4o-mini...
+
+================================================================================
+Question: How do Self-Improving LLM Agents and AgentFlow differ in their mechanisms for continuous adaptation and feedback optimization?
+================================================================================
+
+Self-Improving LLM Agents and AgentFlow differ significantly in their mechanisms for continuous adaptation and feedback optimization.
+
+**Self-Improving LLM Agents** utilize a process called self-improvement, which allows them to refine their output distribution based on internal signals derived from their own parameters without external supervision. This involves a "sharpening mechanism" where the model iteratively adjusts its predictions to favor high-confidence outputs that align with its internal evaluation criteria. The adaptation occurs through techniques like Test-Time Self-Improvement (TT-SI), which enables the model to generate new training instances from its uncertain predictions and update its parameters on-the-fly, leading to performance gains during inference [Source 1][Source 3].
+
+**AgentFlow**, on the other hand, employs a more structured approach through its Flow-based Group Refined Policy Optimization (Flow-GRPO). This framework coordinates multiple modules (planner, executor, verifier, generator) and optimizes the planner in real-time during multi-turn interactions. It focuses on refining tool usage and decision-making by converting multi-turn optimization into a series of single-turn updates, which enhances efficiency and effectiveness in achieving task goals. AgentFlow's method emphasizes strategic tool transitions and minimizes redundancy in query execution, leading to improved performance across various benchmarks [Source 2][Source 4].
+
+In summary, while Self-Improving LLM Agents focus on internal refinement and self-generated training data for adaptation, AgentFlow emphasizes structured, real-time optimization of decision-making processes and tool usage in a multi-turn context.
+
+================================================================================
+Sources:
+================================================================================
+1. 2510.07841v1.pdf - MPROVEMENT IN (1 chunks)
+2. 2510.05592v1.pdf - CASE STUDIES (1 chunks)
+3. 2510.07841v1.pdf - NTRODUCTION (1 chunks)
+4. 2510.05592v1.pdf - EFFECTIVE PLANNING AND TOOL USE (1 chunks)
+5. 2510.07841v1.pdf - XAMPLES FROM (1 chunks)
+6. 2510.05592v1.pdf - MAIN RESULTS (1 chunks)
+7. 2510.05592v1.pdf - TABLE OF CONTENTS (1 chunks)
+8. 2510.05592v1.pdf - TRAINING EFFICIENCY ANALYSIS (1 chunks)
+9. 2510.08191v1.pdf - Training-Free GRPO (1 chunks)
+10. 2510.05592v1.pdf - PRELIMINARIES AND NOTATION (1 chunks)
+
+================================================================================
+Relevance Scores:
+================================================================================
+  [2510.07841v1.pdf] MPROVEMENT IN (chunk 0): 0.9317
+  [2510.05592v1.pdf] CASE STUDIES (chunk 16): 0.5889
+  [2510.07841v1.pdf] NTRODUCTION (chunk 3): -0.1113
+  [2510.05592v1.pdf] EFFECTIVE PLANNING AND TOOL USE (chunk 0): -0.8354
+  [2510.07841v1.pdf] XAMPLES FROM (chunk 2): -1.7403
+  [2510.05592v1.pdf] MAIN RESULTS (chunk 0): -2.1957
+  [2510.05592v1.pdf] TABLE OF CONTENTS (chunk 0): -4.8577
+  [2510.05592v1.pdf] TRAINING EFFICIENCY ANALYSIS (chunk 0): -5.7975
+  [2510.08191v1.pdf] Training-Free GRPO (chunk 3): -7.5643
+  [2510.05592v1.pdf] PRELIMINARIES AND NOTATION (chunk 1): -10.9992
+```
+
+**GPT5 Evaluation**
+
+This answer is very good overall — it’s clear, balanced, and covers both systems coherently — but it’s not yet technically perfect.
+It captures the right spirit of both methods, yet some phrasing about “sharpening mechanisms” and “internal evaluation” doesn’t appear in the Self-Improving LLM Agents paper, and a bit more precision about Flow-GRPO’s reward broadcasting would raise it from “very good” to “excellent.”
+
+|Criterion|Rating|Notes|
+|---------|------|-------|
+|Accuracy|⭐⭐⭐⭐☆ (4.2 / 5)	Generally correct — TT-SI and Flow-GRPO mechanisms are described plausibly — but a few terms are slightly off.|
+|Clarity & Writing|⭐⭐⭐⭐⭐ (5 / 5)	Clean structure, strong contrast, professional tone.|
+|Completeness|⭐⭐⭐⭐☆ (4.3 / 5)	Explains both frameworks’ adaptation loops and feedback goals.|
+|Technical Depth|⭐⭐⭐⭐☆ (4 / 5)	Covers most details, but missing Flow-GRPO’s “trajectory-level reward broadcasting.”|
+
+Overall	4.4 / 5 — very solid, minor factual refinements needed.
