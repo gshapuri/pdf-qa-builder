@@ -32,7 +32,6 @@ def build_index(
     :param chunk_size: number of words per chunk
     :param overlap: number of words overlapping between chunks
     :param summary_level: 'section' or 'chunk' - what to summarize
-    :return:
     """
     start_time = time.time()
     
@@ -91,8 +90,7 @@ def build_index(
                         for name, vector in zip(summaries.keys(), summary_embeds)
                     }
                     
-                # chunk level
-                else:  
+                else:  # chunk level
                     print(f"Generating chunk summaries...")
                     chunk_summaries = summarizer.summarize_chunks(chunks)
                     
@@ -155,8 +153,8 @@ def build_index(
 def ask_question(
     question: str, 
     top_k: int = 5,
-    use_reranker: bool = True,
     rerank_mode: str = "hybrid",
+    rerank_model: str = "balanced",
     retrieve_k: int = 20,
 ):
     """
@@ -164,18 +162,19 @@ def ask_question(
     
     :param question: natural language query
     :param top_k: number of chunks/sections to use for answer generation
-    :param use_reranker: whether to use reranker
-    :param rerank_mode: 'chunks' (flat), 'sections' (per section), or 'hybrid' (balanced)
+    :param rerank_mode: 'chunks' (flat), 'sections' (per section), 'hybrid' (balanced), or 'none' (no reranking)
+    :param rerank_model: reranker model ('fast', 'balanced', 'best', 'llm')
     :param retrieve_k: number of initial candidates to retrieve (before reranking)
-    :return:
     """
+    use_reranker = rerank_mode != "none"
+    
     try:
         # initialize pipeline components
         retriever = Retriever(top_k=retrieve_k if use_reranker else top_k)
         generator = Generator()
         
         if use_reranker:
-            reranker = Reranker(model_name="balanced")
+            reranker = Reranker(model_name=rerank_model)
 
         try:
             # retrieve candidates
@@ -222,8 +221,8 @@ def ask_question(
                             retrieved_results,
                             chunks_per_section=chunks_per_section,
                         )
-                    
-                    # hybrid
+                        
+                    # hybrid    
                     else:
                         reranked_results = reranker.rerank_hybrid(
                             question,
@@ -337,16 +336,18 @@ def main():
         help="Number of chunks to use for answer generation"
     )
     ask_parser.add_argument(
-        "--no-rerank",
-        action="store_true",
-        help="Disable reranking (faster but less accurate)"
-    )
-    ask_parser.add_argument(
         "--rerank-mode",
         type=str,
-        choices=["chunks", "sections", "hybrid"],
+        choices=["chunks", "sections", "hybrid", "none"],
         default="hybrid",
-        help="Reranking strategy: chunks (flat), sections (per-section), hybrid (balanced)"
+        help="Reranking strategy: chunks (flat), sections (per-section), hybrid (balanced), none (no reranking)"
+    )
+    ask_parser.add_argument(
+        "--rerank-model",
+        type=str,
+        choices=["fast", "balanced", "best", "llm"],
+        default="balanced",
+        help="Reranker model: fast (MiniLM-L6), balanced (MiniLM-L12, default), best (BGE), llm (GPT-4o-mini)"
     )
     ask_parser.add_argument(
         "--retrieve-k",
@@ -368,8 +369,8 @@ def main():
         ask_question(
             args.question, 
             args.top_k,
-            use_reranker=not args.no_rerank,
             rerank_mode=args.rerank_mode,
+            rerank_model=args.rerank_model,
             retrieve_k=args.retrieve_k,
         )
     else:

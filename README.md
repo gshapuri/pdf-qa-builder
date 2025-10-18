@@ -9,6 +9,7 @@ Read, chunk, summarize, embed, and query PDFs using Weaviate and LLM-based retri
 * Generate short summaries for each section or chunk
 * Create embeddings and store them in a Weaviate vector database
 * Retrieve semantically relevant chunks based on user questions
+* Rerank retrieved chunks using cross-encoder or LLM-based models for improved relevance
 * Use an LLM to synthesize factual answers from retrieved context
 * Flexible CLI for both indexing and querying
 
@@ -67,21 +68,35 @@ python run.py ask "What methods are used in this paper?"
 4. **Embedder** — Creates embeddings for chunks and summaries
 5. **VectorStore** — Connects to Weaviate, defines schema, stores and retrieves vectors
 6. **Retriever** — Retrieves similar chunks based on a query
-7. **Generator** — Builds prompts and uses an LLM to synthesize answers
-8. **CLI (`run.py`)** — orchestrates `index`, and `ask` commands
+7. **Reranker** — Scores and reranks retrieved chunks using cross-encoder or LLM models
+8. **Generator** — Builds prompts and uses an LLM to synthesize answers
+9. **CLI (`run.py`)** — orchestrates `index`, and `ask` commands
 
 ## Commands / API
 
 | Command | Description |
 |---------|-------------|
 | `run.py index --pdf-dir <path> --chunk-size <int> --overlap <int> --summary-level <section or chunk>` | Read PDFs, split into chunks, generate summaries, create embeddings, and upload to Weaviate |
-| `run.py ask "question"` | Retrieve relevant chunks and generate an LLM answer |
+| `run.py ask "question" --top-k <int> --retrieve-k <int> --rerank-mode <mode> --rerank-model <model>` | Retrieve relevant chunks and generate an LLM answer |
 
-#### Indexing parameters
+#### Indexing Parameters
 
-* chunk-size	Number of words per chunk (default: 250)
-* overlap	Overlapping words between chunks (default: 50)
-* summary-level	Summarize at section or chunk level
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--pdf-dir` | (required) | Directory path containing PDF files |
+| `--chunk-size` | 250 | Number of words per chunk |
+| `--overlap` | 50 | Number of overlapping words between chunks |
+| `--summary-level` | section | Summarize at `section` or `chunk` level |
+
+#### Query Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--top-k` | 10 | Number of chunks to use for answer generation |
+| `--retrieve-k` | 20 | Number of initial candidates to retrieve before reranking |
+| `--rerank-mode` | hybrid | Reranking strategy: `chunks` (flat), `sections` (per-section), `hybrid` (balanced), or `none` (disable reranking) |
+| `--rerank-model` | balanced | Reranker model: `fast` (MiniLM-L6), `balanced` (MiniLM-L12), `best` (BGE-reranker), or `llm` (GPT-4o-mini) |
+
 
 ## Examples
 
