@@ -23,7 +23,7 @@ Read, chunk, summarize, embed, and query PDFs using Weaviate and LLM-based retri
 
 ### Installation
 ```
-git clone https://github.com/yourusername/pdf-qa-builder.git
+git clone https://github.com/gshapuri/pdf-qa-builder.git
 cd pdf-qa-builder
 python3 -m venv .venv
 source .venv/bin/activate
